@@ -99,6 +99,11 @@ def switch_chat(chat_id):
     # Don't do anything if we're already on this chat
     if chat_id == st.session_state.current_chat_id:
         return
+    
+    # Make sure the chat exists
+    if chat_id not in st.session_state.chats:
+        st.error(f"Chat {chat_id} not found")
+        return
         
     # Save current chat
     if st.session_state.messages:
@@ -112,9 +117,12 @@ def switch_chat(chat_id):
     
     # Load selected chat
     chat_data = st.session_state.chats[chat_id]
-    st.session_state.messages = chat_data['messages']
+    st.session_state.messages = chat_data['messages'].copy()  # Use copy to avoid reference issues
     st.session_state.current_philosopher = chat_data['philosopher']
     st.session_state.current_chat_id = chat_id
+    
+    # Force a rerun to update the UI
+    st.rerun()
 
 def delete_chat(chat_id):
     """Delete a chat from session state"""
@@ -128,11 +136,14 @@ def delete_chat(chat_id):
         # If we deleted the current chat and there are other chats, switch to another one
         if is_current:
             if st.session_state.chats:
-                # Get the first available chat ID
-                new_chat_id = next(iter(st.session_state.chats.keys()))
+                # Get the newest chat ID based on timestamp
+                other_chats = list(st.session_state.chats.items())
+                other_chats.sort(key=lambda x: x[1].get('timestamp', ''), reverse=True)
+                new_chat_id = other_chats[0][0]
+                
                 # Load that chat
                 chat_data = st.session_state.chats[new_chat_id]
-                st.session_state.messages = chat_data['messages']
+                st.session_state.messages = chat_data['messages'].copy()
                 st.session_state.current_philosopher = chat_data['philosopher']
                 st.session_state.current_chat_id = new_chat_id
             else:
@@ -172,13 +183,18 @@ with st.sidebar:
     
     st.divider()  # Add a divider between the button and chat history
     
-    # Display in-session chat history
-    if st.session_state.chats:
-        for chat_id, chat_data in st.session_state.chats.items():
-            # Skip current chat
-            if chat_id == st.session_state.current_chat_id:
-                continue
-                
+    # Display current chat first
+    
+    
+    # Display other chats in reverse chronological order (newest first)
+    other_chats = [(chat_id, chat_data) for chat_id, chat_data in st.session_state.chats.items() 
+                  if chat_id != st.session_state.current_chat_id]
+    
+    # Sort by timestamp (newest first)
+    other_chats.sort(key=lambda x: x[1].get('timestamp', ''), reverse=True)
+    
+    if other_chats:
+        for chat_id, chat_data in other_chats:
             # Create a button for each chat with the summary as the label
             summary = chat_data.get('summary', 'Untitled conversation')
             if summary and len(summary) > 30:
@@ -188,14 +204,17 @@ with st.sidebar:
             philosopher_data = PHILOSOPHERS.get(chat_data['philosopher'], PHILOSOPHERS['marcus_aurelius'])
             label = f"{philosopher_data['avatar']} {summary}"
             
-            col1, col2 = st.columns([0.8, 0.2])
-            with col1:
-                if st.button(label, key=f"session_{chat_id}"):
-                    switch_chat(chat_id)
-            with col2:
-                if st.button("🗑️", key=f"delete_{chat_id}"):
-                    delete_chat(chat_id)
-    else:
+            # Use a container to ensure consistent UI
+            with st.container():
+                col1, col2 = st.columns([0.8, 0.2])
+                with col1:
+                    if st.button(label, key=f"session_{chat_id}"):
+                        switch_chat(chat_id)
+                with col2:
+                    if st.button("🗑️", key=f"delete_{chat_id}"):
+                        delete_chat(chat_id)
+                        st.rerun()  # Force rerun after deletion
+    elif not st.session_state.chats:
         st.info("No other chats in this session")
 
 # Main chat interface
